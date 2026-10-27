@@ -1,5 +1,5 @@
 """
-run_zero_shot.py — First experiment: zero-shot CLIP on CIFAR-10/100.
+run_zero_shot.py — First experiment: zero-shot CLIP on CIFAR-10.
 
 Usage:
     python scripts/run_zero_shot.py --dataset cifar10 --templates 5
@@ -12,11 +12,15 @@ import argparse
 import os
 import pathlib
 
+# 用国内镜像下载（如果本地已有缓存则直接读）
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
 import torch
 import open_clip
-from torchvision.datasets import CIFAR10, CIFAR100
+from datasets import load_dataset
+from PIL import Image
 from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from tqdm import tqdm
@@ -32,49 +36,46 @@ PROMPT_TEMPLATES = [
 ]
 
 
-def build_transform(clip_model):
-    """CLIP 官方推荐的预处理：resize + center crop + normalize."""
-    img_size = clip_model.visual.image_size[-1]  # ViT-B/32 -> 224
-    return Compose([
-        Resize(img_size, interpolation=Image.BICUBIC),
-        CenterCrop(img_size),
-        ToTensor(),
-        Normalize(
-            mean=(0.48145466, 0.4578275, 0.40821073),
-            std=(0.26862954, 0.26130258, 0.27577711),
-        ),
-    ])
+class HfCifarDataset(Dataset):
+    """把 HuggingFace datasets 包装成 torch 能用的 Dataset。"""
+    def __init__(self, hf_split, transform):
+        self.imgs = hf_split["img"]
+        self.labels = hf_split["label"]
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.imgs)
+
+    def __getitem__(self, idx):
+        img = self.imgs[idx].convert("RGB")
+        return self.transform(img), self.labels[idx]
 
 
 @torch.no_grad()
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", choices=["cifar10", "cifar100"], default="cifar10")
-    parser.add_argument("--templates", type=int, default=5,
-                        help="用前 N 个模板（后面 RQ1 会扫这个数）")
+    parser.add_argument("--dataset", choices=["cifar10"], default="cifar10")
+    parser.add_argument("--templates", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--data-root", default="./data")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[info] using device: {device}")
 
-    # 1. 加载 CLIP（权重会自动下载到 ~/.cache/ ，不需要 OpenAI 账号）
+    # 1. 加载 CLIP
+    print("[info] loading CLIP ViT-B/32 ...")
     model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
     tokenizer = open_clip.get_tokenizer("ViT-B-32")
     model = model.to(device).eval()
 
-    # 2. 加载数据集
-    if args.dataset == "cifar10":
-        ds = CIFAR10(root=args.data_root, train=False, download=True, transform=preprocess)
-        classes = CIFAR10.classes
-    else:
-        ds = CIFAR100(root=args.data_root, train=False, download=True, transform=preprocess)
-        classes = CIFAR100.classes
+    # 2. 加载数据集（从 hf-mirror，已缓存则秒读）
+    print("[info] loading CIFAR-10 ...")
+    hf_ds = load_dataset("uoft-cs/cifar10")
+    classes = hf_ds["train"].features["label"].names
+    test_ds = HfCifarDataset(hf_ds["test"], preprocess)
+    loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-    loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
-
-    # 3. 把每个类别的所有模板编码成文本特征，再平均 -> 每个类别一个文本向量
+    # 3. 编码每个类别的所有模板文本，再平均
     templates = PROMPT_TEMPLATES[: args.templates]
     print(f"[info] using {len(templates)} templates for {len(classes)} classes")
 
@@ -83,12 +84,12 @@ def main():
         texts = tokenizer([t.format(class_name.replace("_", " ")) for t in templates]).to(device)
         feat = model.encode_text(texts)
         feat = feat / feat.norm(dim=-1, keepdim=True)
-        feat = feat.mean(dim=0)           # 多模板集成：平均
+        feat = feat.mean(dim=0)
         feat = feat / feat.norm()
         text_features_all.append(feat)
     text_features = torch.stack(text_features_all)  # [num_classes, dim]
 
-    # 4. 遍历测试集，算 image feature 和每个文本 feature 的余弦相似度，取最大
+    # 4. 遍历测试集
     correct = 0
     total = 0
     all_preds = []
@@ -99,7 +100,7 @@ def main():
         image_features = model.encode_image(images)
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
 
-        sims = image_features @ text_features.T   # [B, num_classes]
+        sims = image_features @ text_features.T
         preds = sims.argmax(dim=-1).cpu()
 
         correct += (preds == labels).sum().item()
@@ -110,14 +111,14 @@ def main():
     acc = correct / total
     print(f"[result] zero-shot top-1 accuracy on {args.dataset}: {acc:.4f}")
 
-    # 5. 存混淆矩阵图
+    # 5. 存混淆矩阵
     out_dir = pathlib.Path(__file__).resolve().parent.parent / "results"
     out_dir.mkdir(exist_ok=True)
     cm = confusion_matrix(all_labels, all_preds)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes)
     fig, ax = plt.subplots(figsize=(10, 10))
     disp.plot(ax=ax, xticks_rotation=45, values_format="d", colorbar=False)
-    plt.title(f"Zero-shot CLIP on {args.dataset} (templates={len(templates)}, acc={acc:.3f})")
+    plt.title(f"Zero-shot CLIP on CIFAR-10 (templates={len(templates)}, acc={acc:.3f})")
     plt.tight_layout()
     out_path = out_dir / "fig_zero_shot_confusion.png"
     plt.savefig(out_path, dpi=150)
@@ -125,5 +126,4 @@ def main():
 
 
 if __name__ == "__main__":
-    from PIL import Image  # 延迟导入，避免头部循环
     main()
