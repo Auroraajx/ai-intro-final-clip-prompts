@@ -5,9 +5,22 @@
 
 - **Author**: Auroraajx
 - **Track**: Track 1 (Research)
-- **Status**: WIP — Proposal stage
+- **Status**: On track — Proposal draft ready (awaiting submission)
 
 ---
+
+## Progress
+
+- [x] 仓库初始化（11.3）
+- [x] Baseline：zero-shot 85.8%（CIFAR-10，5 模板）
+- [x] Proposal 正式稿（DDL 11.16 提交）
+- [ ] Track / 题目登记（DDL 11.9）
+- [ ] RQ1 模板扫描（5/10/20/40/80）
+- [ ] RQ2 描述粒度
+- [ ] RQ3 few-shot 对比（Linear Probe / LoRA / FT）
+- [ ] RQ4 错误分析（混淆矩阵 / t-SNE）
+- [ ] Milestone Report（DDL 11.30）
+- [ ] Final Report + Demo Video（DDL 12.28）
 
 ## TL;DR
 
