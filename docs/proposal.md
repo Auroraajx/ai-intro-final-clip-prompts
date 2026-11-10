@@ -3,7 +3,7 @@
 > **课程**：人工智能导论（Introduction to AI）
 > **赛道**：Research Track（研究型）
 > **题目**：R1 — Can Better Prompts Replace Fine-tuning?
-> **作者**：Auroraajx（单人项目）
+> **作者**：学号 251240110（GitHub: Auroraajx，单人项目）
 > **提交节点**：2026-11-16 23:59（Soft DDL）
 > **代码仓库**：https://github.com/Auroraajx/ai-intro-final-clip-prompts
 
@@ -77,7 +77,7 @@ CLIP（Radford et al., 2021）通过在约 4 亿图文对上做对比学习，�
 
 | 时间 | 阶段 | 本项目的具体任务 |
 |---|---|---|
-| 11.3–11.9 | 个人选题 | 确定 R1；完成 Track/题目登记 |
+| 11.3–11.9 | 个人选题 | 确定 Research Track + R1；Track/题目登记已并入本次 Proposal 提交 |
 | 11.10–11.16 | **Proposal** | 撰写并提交本提案（**11.16 23:59**） |
 | 11.17–11.23 | Baseline | 完成 zero-shot 模板扫描（5/10/20/40/80）与 RQ1、RQ2 首轮实验 |
 | 11.24–11.30 | **Milestone** | 提交 2–3 页报告 + baseline 结果图（**11.30 23:59**） |
